@@ -3,5 +3,5 @@ services:
     name: isl-bridge-backend
     env: python
     rootDir: backend
-    buildCommand: pip install -r requirements.txt
+    buildCommand: pip install -r requirements-ml.txt
     startCommand: gunicorn app:app

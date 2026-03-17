@@ -61,9 +61,11 @@ npm run dev
 ### Backend on Render
 
 1. Create a new Web Service from the `backend` folder.
-2. Build command: `pip install -r requirements.txt`
+2. Build command: `pip install -r requirements-ml.txt`
 3. Start command: `gunicorn app:app`
 4. Add environment variables from `.env.example`
+
+If you want deployed TensorFlow or alphabet recognition, make sure the model files under `backend/models/` are present in the repo or otherwise available to the Render service at build/runtime.
 
 ### Frontend on Vercel
 
