@@ -166,3 +166,22 @@ This writes:
 - `backend/models/isl_alphabet_labels.json`
 
 That recovered model is useful for single-hand alphabet spelling. It is separate from the future two-hand word and sentence model.
+
+## Full Training Workflow
+
+For a full guide to recording, extracting landmarks, training, and deployment, see:
+
+- `TRAINING.md`
+- `docs/isl_training_prompts.csv`
+
+To train the general two-hand model from extracted JSON landmark clips:
+
+```bash
+python backend/scripts/train_sequence_model.py
+```
+
+This writes:
+
+- `backend/models/isl_bridge_lstm.keras`
+- `backend/models/labels.json`
+- `backend/data/training_metrics.json`

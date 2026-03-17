@@ -1,0 +1,52 @@
+category,label,display_text,recording_note
+alphabet,A,A,One clear letter sign with one hand
+alphabet,B,B,One clear letter sign with one hand
+alphabet,C,C,One clear letter sign with one hand
+alphabet,D,D,One clear letter sign with one hand
+alphabet,E,E,One clear letter sign with one hand
+alphabet,F,F,One clear letter sign with one hand
+alphabet,G,G,One clear letter sign with one hand
+alphabet,H,H,One clear letter sign with one hand
+alphabet,I,I,One clear letter sign with one hand
+alphabet,J,J,One clear letter sign with one hand
+alphabet,K,K,One clear letter sign with one hand
+alphabet,L,L,One clear letter sign with one hand
+alphabet,M,M,One clear letter sign with one hand
+alphabet,N,N,One clear letter sign with one hand
+alphabet,O,O,One clear letter sign with one hand
+alphabet,P,P,One clear letter sign with one hand
+alphabet,Q,Q,One clear letter sign with one hand
+alphabet,R,R,One clear letter sign with one hand
+alphabet,S,S,One clear letter sign with one hand
+alphabet,T,T,One clear letter sign with one hand
+alphabet,U,U,One clear letter sign with one hand
+alphabet,V,V,One clear letter sign with one hand
+alphabet,W,W,One clear letter sign with one hand
+alphabet,X,X,One clear letter sign with one hand
+alphabet,Y,Y,One clear letter sign with one hand
+alphabet,Z,Z,One clear letter sign with one hand
+word,hello,Hello,Short greeting sign
+word,help,Help,Emergency help sign
+word,stop,Stop,Clear stop gesture
+word,yes,Yes,Simple yes sign
+word,no,No,Simple no sign
+word,thank_you,Thank you,Common polite sign
+word,sorry,Sorry,Common apology sign
+word,water,Water,Single concept word
+word,food,Food,Single concept word
+word,hospital,Hospital,Emergency destination
+word,doctor,Doctor,Useful assistance sign
+word,emergency,Emergency,High-priority sign
+word,pain,Pain,Medical sign
+word,bathroom,Bathroom,Daily need sign
+word,home,Home,Daily use sign
+phrase,i_need_water,I need water,Both hands visible if used
+phrase,please_help_me,Please help me,Both hands visible if used
+phrase,i_am_hungry,I am hungry,Natural pace
+phrase,i_am_thirsty,I am thirsty,Natural pace
+phrase,where_is_the_hospital,Where is the hospital,Speak the phrase mentally but sign only
+phrase,can_you_repeat_that,Can you repeat that,Useful conversation phrase
+phrase,what_is_your_name,What is your name,Useful conversation phrase
+phrase,how_are_you,How are you,Useful conversation phrase
+phrase,i_am_fine,I am fine,Useful response phrase
+phrase,this_is_my_name,This is my name,Useful introduction phrase
