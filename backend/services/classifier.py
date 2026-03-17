@@ -10,6 +10,9 @@ except Exception:
 
 
 class GestureClassifier:
+    DEFAULT_SEQUENCE_LENGTH = 12
+    HAND_ORDER = ("Left", "Right")
+
     def __init__(self):
         self.base_dir = Path(__file__).resolve().parents[1]
         self.model_path = self.base_dir / "models" / "isl_bridge_lstm.keras"
@@ -29,22 +32,16 @@ class GestureClassifier:
         self.model_type = "tensorflow"
 
     def predict(self, landmarks):
+        sequence = self._coerce_sequence(landmarks)
         if self.model is not None:
-            return self._predict_tensorflow(landmarks)
-        return self._predict_heuristic(landmarks)
+            return self._predict_tensorflow(sequence)
+        return self._predict_heuristic(sequence[-1])
 
-    def _predict_tensorflow(self, landmarks):
-        vector = []
-        for point in landmarks:
-            vector.extend(
-                [
-                    float(point.get("x", 0)),
-                    float(point.get("y", 0)),
-                    float(point.get("z", 0)),
-                ]
-            )
-
-        data = np.array(vector, dtype=np.float32).reshape(1, 1, -1)
+    def _predict_tensorflow(self, sequence):
+        frames = np.stack([self._vectorize_frame(frame) for frame in sequence]).astype(
+            np.float32
+        )
+        data = self._prepare_tensorflow_input(frames)
         scores = self.model.predict(data, verbose=0)[0]
         index = int(np.argmax(scores))
         return {
@@ -53,7 +50,15 @@ class GestureClassifier:
             "source": "tensorflow",
         }
 
-    def _predict_heuristic(self, landmarks):
+    def _predict_heuristic(self, frame):
+        landmarks = self._primary_hand(frame)
+        if landmarks is None:
+            return {
+                "label": "Gesture not recognised",
+                "confidence": 0.0,
+                "source": "heuristic",
+            }
+
         points = np.array(
             [
                 [
@@ -120,6 +125,147 @@ class GestureClassifier:
             "confidence": 0.45,
             "source": "heuristic",
         }
+
+    def _coerce_sequence(self, landmarks):
+        if not isinstance(landmarks, list) or not landmarks:
+            raise ValueError("Expected at least one frame of landmarks.")
+
+        first = landmarks[0]
+        if isinstance(first, dict):
+            if "x" in first:
+                return [{"hands": [{"label": "Unknown", "landmarks": self._coerce_landmarks(landmarks)}]}]
+            if "hands" in first:
+                return [self._coerce_frame(frame) for frame in landmarks if frame]
+
+        if isinstance(first, list):
+            return [
+                {"hands": [{"label": "Unknown", "landmarks": self._coerce_landmarks(frame)}]}
+                for frame in landmarks
+                if frame
+            ]
+
+        raise ValueError("Invalid landmarks payload.")
+
+    def _coerce_frame(self, frame):
+        if not isinstance(frame, dict):
+            raise ValueError("Each frame must be an object with hand data.")
+
+        hands = frame.get("hands", [])
+        if not isinstance(hands, list) or not hands:
+            raise ValueError("Each frame must contain at least one hand.")
+
+        normalized_hands = []
+        for hand in hands:
+            if not isinstance(hand, dict):
+                raise ValueError("Invalid hand payload.")
+            normalized_hands.append(
+                {
+                    "label": str(hand.get("label", "Unknown")).strip() or "Unknown",
+                    "landmarks": self._coerce_landmarks(hand.get("landmarks", [])),
+                }
+            )
+
+        normalized_hands.sort(key=lambda hand: self._hand_sort_key(hand["label"]))
+        return {"hands": normalized_hands}
+
+    def _coerce_landmarks(self, frame):
+        if not isinstance(frame, list) or len(frame) != 21:
+            raise ValueError("Each hand must contain 21 landmarks.")
+        return frame
+
+    def _vectorize_frame(self, frame):
+        points_by_hand = []
+        for hand_name in self.HAND_ORDER:
+            hand = self._get_hand(frame, hand_name)
+            if hand is None:
+                points_by_hand.append(np.zeros((21, 3), dtype=np.float32))
+                continue
+            points_by_hand.append(self._landmarks_to_points(hand["landmarks"]))
+
+        return self._normalize_points(np.vstack(points_by_hand)).reshape(-1)
+
+    def _prepare_tensorflow_input(self, frames):
+        input_shape = getattr(self.model, "input_shape", None)
+        if isinstance(input_shape, list):
+            input_shape = input_shape[0]
+
+        if not input_shape:
+            return frames.reshape(1, frames.shape[0], frames.shape[1])
+
+        rank = len(input_shape)
+        if rank == 2:
+            return frames[-1].reshape(1, -1)
+
+        if rank == 3:
+            required_steps = input_shape[1]
+            if required_steps and frames.shape[0] != required_steps:
+                frames = self._pad_or_trim_sequence(frames, required_steps)
+            return frames.reshape(1, frames.shape[0], frames.shape[1])
+
+        return frames.reshape(1, frames.shape[0], frames.shape[1])
+
+    def _pad_or_trim_sequence(self, frames, required_steps):
+        if frames.shape[0] > required_steps:
+            return frames[-required_steps:]
+
+        if frames.shape[0] == required_steps:
+            return frames
+
+        pad_count = required_steps - frames.shape[0]
+        pad_frame = np.repeat(frames[:1], pad_count, axis=0)
+        return np.concatenate([pad_frame, frames], axis=0)
+
+    def _normalize_points(self, points):
+        non_zero_rows = np.any(np.abs(points) > 1e-6, axis=1)
+        active_points = points[non_zero_rows]
+        if not len(active_points):
+            return points
+
+        wrist = active_points[0]
+        shifted = points - wrist
+        active_shifted = shifted[non_zero_rows]
+        scale = np.max(np.linalg.norm(active_shifted[:, :2], axis=1))
+        if scale < 1e-6:
+            scale = 1.0
+        return shifted / scale
+
+    def _primary_hand(self, frame):
+        right_hand = self._get_hand(frame, "Right")
+        if right_hand is not None:
+            return right_hand["landmarks"]
+
+        left_hand = self._get_hand(frame, "Left")
+        if left_hand is not None:
+            return left_hand["landmarks"]
+
+        hands = frame.get("hands", [])
+        return hands[0]["landmarks"] if hands else None
+
+    def _get_hand(self, frame, name):
+        for hand in frame.get("hands", []):
+            if hand["label"].lower() == name.lower():
+                return hand
+        return None
+
+    def _hand_sort_key(self, label):
+        normalized = label.strip().lower()
+        preferred = [name.lower() for name in self.HAND_ORDER]
+        if normalized in preferred:
+            return (preferred.index(normalized), normalized)
+        return (len(preferred), normalized)
+
+    def _landmarks_to_points(self, landmarks):
+        return np.array(
+            [
+                [
+                    float(point.get("x", 0)),
+                    float(point.get("y", 0)),
+                    float(point.get("z", 0)),
+                ]
+                for point in landmarks
+            ],
+            dtype=np.float32,
+        )
 
     @staticmethod
     def _finger_extended(points, tip_index, pip_index):

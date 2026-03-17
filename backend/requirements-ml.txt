@@ -1,2 +1,4 @@
 -r requirements.txt
 tensorflow==2.19.0
+mediapipe==0.10.14
+opencv-python==4.10.0.84

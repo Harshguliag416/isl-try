@@ -37,10 +37,11 @@ def predict():
     landmarks = payload.get("landmarks", [])
     mode = payload.get("mode", "sign_to_text")
 
-    if not isinstance(landmarks, list) or len(landmarks) != 21:
-        return jsonify({"error": "Expected 21 hand landmarks."}), 400
+    try:
+        prediction = classifier.predict(landmarks)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
 
-    prediction = classifier.predict(landmarks)
     return jsonify(
         {
             "prediction": prediction["label"],

@@ -89,3 +89,58 @@ To switch to your trained ISL model later:
 4. Restart the backend
 
 The app will automatically use TensorFlow predictions when the model is present.
+
+## Dataset Preparation
+
+If you have extracted ISL datasets under `datasets/archive2` and `datasets/archive4`, generate training manifests with:
+
+```bash
+python backend/scripts/prepare_isl_datasets.py
+```
+
+This writes:
+
+- `backend/data/isl_static_manifest.csv`
+- `backend/data/isl_sequence_manifest.csv`
+- `backend/data/isl_dataset_summary.json`
+
+Use the static manifest for alphabet or single-sign image classification and the sequence manifest for phrase-level video/frame training.
+
+## Training From Videos You Have Rights To Use
+
+You can also train from local videos that you recorded yourself or have permission to use from creators or permissive sources.
+
+Recommended folder layout:
+
+```text
+datasets/authorized_videos/
+  hello/
+    clip1.mp4
+    clip2.mp4
+  need_water/
+    clip1.mp4
+```
+
+Install ML dependencies:
+
+```bash
+pip install -r backend/requirements-ml.txt
+```
+
+Download MediaPipe's hand landmarker task file and place it at:
+
+```text
+backend/models/hand_landmarker.task
+```
+
+Then extract two-hand landmark sequences from your local videos:
+
+```bash
+python backend/scripts/extract_two_hand_landmarks.py
+```
+
+This writes JSON landmark sequences and:
+
+- `backend/data/video_landmarks/authorized_video_manifest.csv`
+
+Use only videos you own, recorded yourself, or are explicitly licensed to reuse. Avoid bulk-downloading random YouTube videos unless you have permission from the creator.

@@ -8,3 +8,5 @@ frontend/.env
 backend/.env
 desktop.ini
 .vscode/
+datasets/
+backend/data/

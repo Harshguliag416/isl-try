@@ -2,6 +2,9 @@ import { FilesetResolver, HandLandmarker } from "@mediapipe/tasks-vision";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
+const MAX_SEQUENCE_FRAMES = 12;
+const MIN_SEQUENCE_FRAMES = 6;
+const STABLE_PREDICTION_WINDOW = 4;
 
 const MODES = {
   signToText: "signToText",
@@ -79,6 +82,41 @@ function formatTranscript(text) {
     .replace(/(^\w)/, (match) => match.toUpperCase());
 }
 
+function cloneLandmarks(landmarks) {
+  return landmarks.map((point) => ({
+    x: point.x,
+    y: point.y,
+    z: point.z,
+  }));
+}
+
+function cloneHands(landmarksList = [], handednesses = []) {
+  return landmarksList
+    .map((landmarks, index) => {
+      const category = handednesses[index]?.[0];
+      return {
+        label: category?.displayName || category?.categoryName || `Hand ${index + 1}`,
+        score: category?.score || 0,
+        landmarks: cloneLandmarks(landmarks),
+      };
+    })
+    .sort((left, right) => left.label.localeCompare(right.label));
+}
+
+function getStablePrediction(predictions) {
+  if (!predictions.length) {
+    return null;
+  }
+
+  const counts = predictions.reduce((accumulator, prediction) => {
+    accumulator[prediction] = (accumulator[prediction] || 0) + 1;
+    return accumulator;
+  }, {});
+
+  const [label, count] = Object.entries(counts).sort((left, right) => right[1] - left[1])[0];
+  return count >= Math.ceil(predictions.length / 2) ? label : null;
+}
+
 function useSpeechRecognition(language, onTranscript) {
   const recognitionRef = useRef(null);
   const [supported, setSupported] = useState(true);
@@ -147,6 +185,8 @@ function App() {
   const lastPhraseRef = useRef("");
   const lastSpokenRef = useRef("");
   const lastSpeechSavedRef = useRef("");
+  const sequenceBufferRef = useRef([]);
+  const predictionWindowRef = useRef([]);
 
   const speechRecognition = useSpeechRecognition(language, (text) => {
     setTranslation(text);
@@ -242,7 +282,7 @@ function App() {
           "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
       },
       runningMode: "VIDEO",
-      numHands: 1,
+      numHands: 2,
     });
 
     handLandmarkerRef.current = landmarker;
@@ -260,7 +300,7 @@ function App() {
       videoRef.current.srcObject = stream;
       await videoRef.current.play();
       setCameraActive(true);
-      setStatus("Tracking hand");
+      setStatus("Tracking hands");
       runDetectionLoop(landmarker);
     } catch (cameraError) {
       setError(cameraError.message || "Camera access failed.");
@@ -285,6 +325,8 @@ function App() {
 
     setCameraActive(false);
     setStatus(t.ready);
+    sequenceBufferRef.current = [];
+    predictionWindowRef.current = [];
   }
 
   function clearAll() {
@@ -294,10 +336,12 @@ function App() {
     lastPhraseRef.current = "";
     lastSpokenRef.current = "";
     lastSpeechSavedRef.current = "";
+    sequenceBufferRef.current = [];
+    predictionWindowRef.current = [];
     window.speechSynthesis.cancel();
   }
 
-  function drawLandmarks(landmarks) {
+  function drawLandmarks(hands) {
     const canvas = canvasRef.current;
     const video = videoRef.current;
     const ctx = canvas.getContext("2d");
@@ -306,15 +350,18 @@ function App() {
     canvas.height = video.videoHeight || 720;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    if (!landmarks) {
+    if (!hands?.length) {
       return;
     }
 
-    ctx.fillStyle = "#F97316";
-    landmarks.forEach((point) => {
-      ctx.beginPath();
-      ctx.arc(point.x * canvas.width, point.y * canvas.height, 6, 0, Math.PI * 2);
-      ctx.fill();
+    const palette = ["#22D3EE", "#F97316"];
+    hands.forEach((hand, handIndex) => {
+      ctx.fillStyle = palette[handIndex % palette.length];
+      hand.landmarks.forEach((point) => {
+        ctx.beginPath();
+        ctx.arc(point.x * canvas.width, point.y * canvas.height, 6, 0, Math.PI * 2);
+        ctx.fill();
+      });
     });
   }
 
@@ -327,20 +374,30 @@ function App() {
       }
 
       const result = handLandmarker.detectForVideo(video, performance.now());
-      const hand = result.landmarks?.[0];
-      drawLandmarks(hand);
+      const hands = cloneHands(result.landmarks || [], result.handednesses || []);
+      drawLandmarks(hands);
 
-      if (hand?.length) {
-        setStatus("Tracking hand");
+      if (hands.length) {
+        setStatus(hands.length === 2 ? "Tracking both hands" : "Tracking one hand");
+        sequenceBufferRef.current = [
+          ...sequenceBufferRef.current.slice(-(MAX_SEQUENCE_FRAMES - 1)),
+          { hands },
+        ];
         const now = Date.now();
-        if (!inFlightRef.current && now - lastPredictionRef.current > 650) {
+        if (
+          !inFlightRef.current &&
+          sequenceBufferRef.current.length >= MIN_SEQUENCE_FRAMES &&
+          now - lastPredictionRef.current > 650
+        ) {
           inFlightRef.current = true;
           lastPredictionRef.current = now;
-          await sendLandmarks(hand);
+          await sendLandmarks(sequenceBufferRef.current);
           inFlightRef.current = false;
         }
       } else {
         setStatus(t.noHand);
+        sequenceBufferRef.current = [];
+        predictionWindowRef.current = [];
       }
 
       animationRef.current = requestAnimationFrame(detect);
@@ -349,13 +406,13 @@ function App() {
     animationRef.current = requestAnimationFrame(detect);
   }
 
-  async function sendLandmarks(landmarks) {
+  async function sendLandmarks(frames) {
     try {
       const response = await fetch(`${API_URL}/api/predict`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          landmarks,
+          landmarks: frames,
           language,
           mode: mode === MODES.signToSpeech ? "sign_to_speech" : "sign_to_text",
         }),
@@ -366,11 +423,24 @@ function App() {
         throw new Error(data.error || "Prediction failed.");
       }
 
-      if (data.prediction && data.prediction !== lastPhraseRef.current) {
-        lastPhraseRef.current = data.prediction;
-        setTranslation(data.prediction);
+      const nextWindow = [
+        ...predictionWindowRef.current.slice(-(STABLE_PREDICTION_WINDOW - 1)),
+        data.prediction,
+      ];
+      predictionWindowRef.current = nextWindow;
+      const stablePrediction = getStablePrediction(nextWindow);
+
+      if (
+        stablePrediction &&
+        stablePrediction !== "Gesture not recognised" &&
+        stablePrediction !== lastPhraseRef.current
+      ) {
+        lastPhraseRef.current = stablePrediction;
+        setTranslation(stablePrediction);
         setConfidence(data.confidence || 0);
-        persistConversation(data.mode, data.prediction, data.confidence || 0);
+        persistConversation(data.mode, stablePrediction, data.confidence || 0);
+      } else if (stablePrediction) {
+        setConfidence(data.confidence || 0);
       }
     } catch (requestError) {
       setError(requestError.message || "Prediction failed.");
