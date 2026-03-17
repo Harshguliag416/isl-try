@@ -15,25 +15,49 @@ class GestureClassifier:
 
     def __init__(self):
         self.base_dir = Path(__file__).resolve().parents[1]
-        self.model_path = self.base_dir / "models" / "isl_bridge_lstm.keras"
-        self.labels_path = self.base_dir / "models" / "labels.json"
-        self.model = None
-        self.labels = ["Hello", "Yes", "Stop", "Help", "Need Water"]
+        self.general_model_path = self.base_dir / "models" / "isl_bridge_lstm.keras"
+        self.general_labels_path = self.base_dir / "models" / "labels.json"
+        self.alphabet_model_path = self.base_dir / "models" / "isl_alphabet.keras"
+        self.alphabet_labels_path = self.base_dir / "models" / "isl_alphabet_labels.json"
+        self.general_model = None
+        self.alphabet_model = None
+        self.general_labels = ["Hello", "Yes", "Stop", "Help", "Need Water"]
+        self.alphabet_labels = []
         self.model_type = "heuristic"
-        self._load_model()
+        self.supported_targets = ["general"]
+        self._load_models()
 
-    def _load_model(self):
-        if not tf or not self.model_path.exists():
+    def _load_models(self):
+        if not tf:
             return
 
-        self.model = tf.keras.models.load_model(self.model_path)
-        if self.labels_path.exists():
-            self.labels = json.loads(self.labels_path.read_text(encoding="utf-8"))
-        self.model_type = "tensorflow"
+        if self.general_model_path.exists():
+            self.general_model = tf.keras.models.load_model(
+                self.general_model_path, compile=False
+            )
+            if self.general_labels_path.exists():
+                self.general_labels = json.loads(
+                    self.general_labels_path.read_text(encoding="utf-8")
+                )
+            self.model_type = "tensorflow"
 
-    def predict(self, landmarks):
+        if self.alphabet_model_path.exists():
+            self.alphabet_model = tf.keras.models.load_model(
+                self.alphabet_model_path, compile=False
+            )
+            if self.alphabet_labels_path.exists():
+                self.alphabet_labels = json.loads(
+                    self.alphabet_labels_path.read_text(encoding="utf-8")
+                )
+
+        if self.alphabet_model is not None:
+            self.supported_targets.append("alphabet")
+
+    def predict(self, landmarks, target="general"):
         sequence = self._coerce_sequence(landmarks)
-        if self.model is not None:
+        if target == "alphabet" and self.alphabet_model is not None:
+            return self._predict_alphabet(sequence[-1])
+        if self.general_model is not None:
             return self._predict_tensorflow(sequence)
         return self._predict_heuristic(sequence[-1])
 
@@ -41,13 +65,31 @@ class GestureClassifier:
         frames = np.stack([self._vectorize_frame(frame) for frame in sequence]).astype(
             np.float32
         )
-        data = self._prepare_tensorflow_input(frames)
-        scores = self.model.predict(data, verbose=0)[0]
+        data = self._prepare_tensorflow_input(frames, self.general_model)
+        scores = self.general_model.predict(data, verbose=0)[0]
         index = int(np.argmax(scores))
         return {
-            "label": self.labels[index],
+            "label": self.general_labels[index],
             "confidence": float(scores[index]),
             "source": "tensorflow",
+        }
+
+    def _predict_alphabet(self, frame):
+        hand = self._primary_hand(frame)
+        if hand is None:
+            return {
+                "label": "nothing",
+                "confidence": 0.0,
+                "source": "alphabet_model",
+            }
+
+        vector = self._landmarks_to_points(hand).reshape(-1).astype(np.float32)
+        scores = self.alphabet_model.predict(vector.reshape(1, -1), verbose=0)[0]
+        index = int(np.argmax(scores))
+        return {
+            "label": self.alphabet_labels[index],
+            "confidence": float(scores[index]),
+            "source": "alphabet_model",
         }
 
     def _predict_heuristic(self, frame):
@@ -184,8 +226,8 @@ class GestureClassifier:
 
         return self._normalize_points(np.vstack(points_by_hand)).reshape(-1)
 
-    def _prepare_tensorflow_input(self, frames):
-        input_shape = getattr(self.model, "input_shape", None)
+    def _prepare_tensorflow_input(self, frames, model):
+        input_shape = getattr(model, "input_shape", None)
         if isinstance(input_shape, list):
             input_shape = input_shape[0]
 

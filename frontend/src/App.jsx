@@ -166,12 +166,17 @@ function App() {
     () => window.localStorage.getItem("isl-bridge-language") || "en",
   );
   const [mode, setMode] = useState(MODES.signToText);
+  const [recognitionTarget, setRecognitionTarget] = useState("general");
   const [translation, setTranslation] = useState("");
   const [confidence, setConfidence] = useState(0);
   const [status, setStatus] = useState("Ready");
   const [cameraActive, setCameraActive] = useState(false);
   const [history, setHistory] = useState([]);
-  const [backendHealth, setBackendHealth] = useState({ ok: false, modelType: "heuristic" });
+  const [backendHealth, setBackendHealth] = useState({
+    ok: false,
+    modelType: "heuristic",
+    supportedTargets: ["general"],
+  });
   const [error, setError] = useState("");
 
   const t = COPY[language];
@@ -220,12 +225,20 @@ function App() {
       .then((response) => response.json())
       .then((data) => {
         if (!ignore) {
-          setBackendHealth({ ok: true, modelType: data.model_type || "heuristic" });
+          setBackendHealth({
+            ok: true,
+            modelType: data.model_type || "heuristic",
+            supportedTargets: data.supported_targets || ["general"],
+          });
         }
       })
       .catch(() => {
         if (!ignore) {
-          setBackendHealth({ ok: false, modelType: "heuristic" });
+          setBackendHealth({
+            ok: false,
+            modelType: "heuristic",
+            supportedTargets: ["general"],
+          });
         }
       });
 
@@ -423,6 +436,7 @@ function App() {
           landmarks: frames,
           language,
           mode: mode === MODES.signToSpeech ? "sign_to_speech" : "sign_to_text",
+          target: recognitionTarget,
         }),
       });
 
@@ -481,6 +495,19 @@ function App() {
   }
 
   const showCamera = mode !== MODES.speechToText;
+  const targetHeading = language === "hi" ? "पहचान लक्ष्य" : "Recognition target";
+  const targetCards = [
+    {
+      id: "general",
+      label: language === "hi" ? "शब्द / वाक्य" : "Words / Phrases",
+      disabled: false,
+    },
+    {
+      id: "alphabet",
+      label: language === "hi" ? "वर्णमाला" : "Alphabet",
+      disabled: !backendHealth.supportedTargets.includes("alphabet"),
+    },
+  ];
 
   return (
     <div className="min-h-screen px-4 py-6 text-ink sm:px-6 lg:px-8">
@@ -560,6 +587,29 @@ function App() {
                 </button>
               ))}
             </div>
+
+            {showCamera ? (
+              <div className="mt-6">
+                <h3 className="mb-3 font-display text-xl font-bold">{targetHeading}</h3>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {targetCards.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      disabled={item.disabled}
+                      onClick={() => setRecognitionTarget(item.id)}
+                      className={`rounded-[24px] border p-4 text-left transition ${
+                        recognitionTarget === item.id
+                          ? "border-transparent bg-ink text-white shadow-glow"
+                          : "border-slate-200 bg-white/80 text-slate-700"
+                      } disabled:cursor-not-allowed disabled:opacity-50`}
+                    >
+                      <p className="font-semibold">{item.label}</p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
 
             <div className="mt-6 flex flex-wrap gap-3">
               {showCamera ? (

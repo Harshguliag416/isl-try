@@ -26,7 +26,9 @@ def health():
         {
             "status": "ok",
             "model_type": classifier.model_type,
-            "labels": classifier.labels,
+            "labels": classifier.general_labels,
+            "alphabet_labels": classifier.alphabet_labels,
+            "supported_targets": classifier.supported_targets,
         }
     )
 
@@ -36,9 +38,10 @@ def predict():
     payload = request.get_json(silent=True) or {}
     landmarks = payload.get("landmarks", [])
     mode = payload.get("mode", "sign_to_text")
+    target = payload.get("target", "general")
 
     try:
-        prediction = classifier.predict(landmarks)
+        prediction = classifier.predict(landmarks, target=target)
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
 
@@ -48,6 +51,7 @@ def predict():
             "confidence": prediction["confidence"],
             "source": prediction["source"],
             "mode": mode,
+            "target": target,
         }
     )
 
