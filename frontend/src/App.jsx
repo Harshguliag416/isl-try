@@ -283,6 +283,9 @@ function App() {
       },
       runningMode: "VIDEO",
       numHands: 2,
+      minHandDetectionConfidence: 0.65,
+      minHandPresenceConfidence: 0.65,
+      minTrackingConfidence: 0.7,
     });
 
     handLandmarkerRef.current = landmarker;
@@ -294,7 +297,12 @@ function App() {
       setError("");
       const landmarker = await loadHandLandmarker();
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "user", width: 960, height: 720 },
+        video: {
+          facingMode: "user",
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+          frameRate: { ideal: 30, max: 30 },
+        },
       });
       streamRef.current = stream;
       videoRef.current.srcObject = stream;
