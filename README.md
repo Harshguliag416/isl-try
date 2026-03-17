@@ -144,3 +144,23 @@ This writes JSON landmark sequences and:
 - `backend/data/video_landmarks/authorized_video_manifest.csv`
 
 Use only videos you own, recorded yourself, or are explicitly licensed to reuse. Avoid bulk-downloading random YouTube videos unless you have permission from the creator.
+
+## Importing The Legacy Alphabet Model
+
+If you have the legacy alphabet classifier files:
+
+- `weights.npz`
+- `label_map.json`
+
+you can rebuild a compatible Keras model with:
+
+```bash
+python backend/scripts/import_legacy_alphabet_model.py
+```
+
+This writes:
+
+- `backend/models/isl_alphabet.keras`
+- `backend/models/isl_alphabet_labels.json`
+
+That recovered model is useful for single-hand alphabet spelling. It is separate from the future two-hand word and sentence model.
