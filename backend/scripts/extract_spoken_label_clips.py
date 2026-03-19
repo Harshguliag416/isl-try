@@ -264,6 +264,26 @@ MODULE_CONFIGS = {
             {"label": "tailor", "category": "words", "patterns": ["darzi"]},
         ],
     },
+    "Module 10.2 Conversation between teacher and student.mp4": {
+        "transcript_name": "module_102_conversation_between_teacher_and_student.json",
+        "targets": [
+            {
+                "label": "good_morning",
+                "category": "phrases",
+                "patterns": ["good morning"],
+            },
+            {
+                "label": "thank_you",
+                "category": "words",
+                "patterns": ["thank you"],
+            },
+            {
+                "label": "how_are_you",
+                "category": "phrases",
+                "patterns": ["how are you"],
+            },
+        ],
+    },
 }
 
 
