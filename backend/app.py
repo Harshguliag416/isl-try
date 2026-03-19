@@ -40,6 +40,9 @@ def predict():
     mode = payload.get("mode", "sign_to_text")
     target = payload.get("target", "general")
 
+    if target not in classifier.supported_targets:
+        return jsonify({"error": f"Target '{target}' is not available on this server."}), 400
+
     try:
         prediction = classifier.predict(landmarks, target=target)
     except ValueError as exc:

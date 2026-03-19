@@ -1,7 +1,8 @@
 import { FilesetResolver, HandLandmarker } from "@mediapipe/tasks-vision";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
+const API_URL = (import.meta.env.VITE_API_URL || "").trim()
+  || (import.meta.env.DEV ? "http://localhost:5000" : "");
 const MAX_SEQUENCE_FRAMES = 12;
 const MIN_SEQUENCE_FRAMES = 6;
 const STABLE_PREDICTION_WINDOW = 4;
@@ -40,6 +41,7 @@ const COPY = {
     backend: "Backend Status",
     online: "Online",
     offline: "Offline",
+    setupNeeded: "Setup Needed",
     heuristic: "Heuristic demo model",
     trained: "TensorFlow model",
     output: "Live Output",
@@ -50,6 +52,8 @@ const COPY = {
     ready: "Ready",
     cameraHint: "MediaPipe hand tracking runs directly in the browser.",
     micHint: "Chrome or Edge gives the best speech recognition support.",
+    backendConfigHint: "Set VITE_API_URL in the frontend deployment to connect the backend.",
+    backendOfflineHint: "The frontend could not reach the backend health endpoint.",
   },
   hi: {
     badge: "रियल-टाइम साइन लैंग्वेज ट्रांसलेटर",
@@ -70,6 +74,7 @@ const COPY = {
     backend: "बैकएंड स्टेटस",
     online: "ऑनलाइन",
     offline: "ऑफलाइन",
+    setupNeeded: "सेटअप चाहिए",
     heuristic: "ह्यूरिस्टिक डेमो मॉडल",
     trained: "टेंसरफ्लो मॉडल",
     output: "लाइव आउटपुट",
@@ -80,6 +85,8 @@ const COPY = {
     ready: "तैयार",
     cameraHint: "MediaPipe hand tracking सीधे ब्राउज़र में चलती है।",
     micHint: "सबसे अच्छा speech recognition Chrome या Edge में मिलेगा।",
+    backendConfigHint: "बैकएंड से जुड़ने के लिए frontend deployment में VITE_API_URL सेट करें।",
+    backendOfflineHint: "फ्रंटएंड बैकएंड health endpoint तक नहीं पहुंच सका।",
   },
 };
 
@@ -182,8 +189,10 @@ function App() {
   const [history, setHistory] = useState([]);
   const [backendHealth, setBackendHealth] = useState({
     ok: false,
+    checked: false,
+    configured: Boolean(API_URL),
     modelType: "heuristic",
-    supportedTargets: ["general"],
+    supportedTargets: ["general", "alphabet"],
   });
   const [error, setError] = useState("");
 
@@ -193,6 +202,8 @@ function App() {
   const streamRef = useRef(null);
   const handLandmarkerRef = useRef(null);
   const animationRef = useRef(null);
+  const cameraRunningRef = useRef(false);
+  const trackingSessionRef = useRef(0);
   const inFlightRef = useRef(false);
   const lastPredictionRef = useRef(0);
   const lastPhraseRef = useRef("");
@@ -229,12 +240,27 @@ function App() {
   useEffect(() => {
     let ignore = false;
 
+    if (!API_URL) {
+      setBackendHealth({
+        ok: false,
+        checked: true,
+        configured: false,
+        modelType: "heuristic",
+        supportedTargets: ["general", "alphabet"],
+      });
+      return () => {
+        ignore = true;
+      };
+    }
+
     fetch(`${API_URL}/api/health`)
       .then((response) => response.json())
       .then((data) => {
         if (!ignore) {
           setBackendHealth({
             ok: true,
+            checked: true,
+            configured: true,
             modelType: data.model_type || "heuristic",
             supportedTargets: data.supported_targets || ["general"],
           });
@@ -244,8 +270,10 @@ function App() {
         if (!ignore) {
           setBackendHealth({
             ok: false,
+            checked: true,
+            configured: true,
             modelType: "heuristic",
-            supportedTargets: ["general"],
+            supportedTargets: ["general", "alphabet"],
           });
         }
       });
@@ -267,6 +295,22 @@ function App() {
   useEffect(() => {
     if (mode !== MODES.speechToText) {
       speechRecognition.stop();
+    }
+  }, [mode]);
+
+  useEffect(() => {
+    if (
+      backendHealth.ok &&
+      recognitionTarget !== "general" &&
+      !backendHealth.supportedTargets.includes(recognitionTarget)
+    ) {
+      setRecognitionTarget("general");
+    }
+  }, [backendHealth, recognitionTarget]);
+
+  useEffect(() => {
+    if (mode === MODES.speechToText) {
+      stopCamera();
     }
   }, [mode]);
 
@@ -316,6 +360,7 @@ function App() {
   async function startCamera() {
     try {
       setError("");
+      stopCamera();
       const landmarker = await loadHandLandmarker();
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
@@ -325,19 +370,27 @@ function App() {
           frameRate: { ideal: 30, max: 30 },
         },
       });
+      const sessionId = trackingSessionRef.current + 1;
+      trackingSessionRef.current = sessionId;
+      cameraRunningRef.current = true;
       streamRef.current = stream;
       videoRef.current.srcObject = stream;
       await videoRef.current.play();
       setCameraActive(true);
       setStatus("Tracking hands");
-      runDetectionLoop(landmarker);
+      clearCanvas();
+      runDetectionLoop(landmarker, sessionId);
     } catch (cameraError) {
+      cameraRunningRef.current = false;
       setError(cameraError.message || "Camera access failed.");
       setCameraActive(false);
     }
   }
 
   function stopCamera() {
+    trackingSessionRef.current += 1;
+    cameraRunningRef.current = false;
+
     if (animationRef.current) {
       cancelAnimationFrame(animationRef.current);
       animationRef.current = null;
@@ -349,11 +402,15 @@ function App() {
     }
 
     if (videoRef.current) {
+      videoRef.current.pause();
       videoRef.current.srcObject = null;
     }
 
+    clearCanvas();
     setCameraActive(false);
     setStatus(t.ready);
+    inFlightRef.current = false;
+    lastPredictionRef.current = 0;
     sequenceBufferRef.current = [];
     predictionWindowRef.current = [];
   }
@@ -370,10 +427,31 @@ function App() {
     window.speechSynthesis.cancel();
   }
 
+  function clearCanvas() {
+    const canvas = canvasRef.current;
+    if (!canvas) {
+      return;
+    }
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx) {
+      return;
+    }
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+  }
+
   function drawLandmarks(hands) {
     const canvas = canvasRef.current;
     const video = videoRef.current;
+    if (!canvas || !video) {
+      return;
+    }
+
     const ctx = canvas.getContext("2d");
+    if (!ctx) {
+      return;
+    }
 
     canvas.width = video.videoWidth || 960;
     canvas.height = video.videoHeight || 720;
@@ -413,8 +491,12 @@ function App() {
     });
   }
 
-  function runDetectionLoop(handLandmarker) {
-    const detect = async () => {
+  function runDetectionLoop(handLandmarker, sessionId) {
+    const detect = () => {
+      if (!cameraRunningRef.current || trackingSessionRef.current !== sessionId) {
+        return;
+      }
+
       const video = videoRef.current;
       if (!video || video.readyState < 2) {
         animationRef.current = requestAnimationFrame(detect);
@@ -439,8 +521,11 @@ function App() {
         ) {
           inFlightRef.current = true;
           lastPredictionRef.current = now;
-          await sendLandmarks(sequenceBufferRef.current);
-          inFlightRef.current = false;
+          void sendLandmarks(sequenceBufferRef.current, sessionId).finally(() => {
+            if (trackingSessionRef.current === sessionId) {
+              inFlightRef.current = false;
+            }
+          });
         }
       } else {
         setStatus(t.noHand);
@@ -448,13 +533,15 @@ function App() {
         predictionWindowRef.current = [];
       }
 
-      animationRef.current = requestAnimationFrame(detect);
+      if (cameraRunningRef.current && trackingSessionRef.current === sessionId) {
+        animationRef.current = requestAnimationFrame(detect);
+      }
     };
 
     animationRef.current = requestAnimationFrame(detect);
   }
 
-  async function sendLandmarks(frames) {
+  async function sendLandmarks(frames, sessionId) {
     try {
       const response = await fetch(`${API_URL}/api/predict`, {
         method: "POST",
@@ -468,6 +555,10 @@ function App() {
       });
 
       const data = await response.json();
+      if (trackingSessionRef.current !== sessionId || !cameraRunningRef.current) {
+        return;
+      }
+
       if (!response.ok) {
         throw new Error(data.error || "Prediction failed.");
       }
@@ -492,7 +583,9 @@ function App() {
         setConfidence(data.confidence || 0);
       }
     } catch (requestError) {
-      setError(requestError.message || "Prediction failed.");
+      if (trackingSessionRef.current === sessionId && cameraRunningRef.current) {
+        setError(requestError.message || "Prediction failed.");
+      }
     }
   }
 
@@ -523,6 +616,11 @@ function App() {
 
   const showCamera = mode !== MODES.speechToText;
   const targetHeading = language === "hi" ? "पहचान लक्ष्य" : "Recognition target";
+  const backendBadgeLabel = !backendHealth.configured
+    ? t.setupNeeded
+    : backendHealth.ok
+      ? t.online
+      : t.offline;
   const targetCards = [
     {
       id: "general",
@@ -532,7 +630,10 @@ function App() {
     {
       id: "alphabet",
       label: language === "hi" ? "वर्णमाला" : "Alphabet",
-      disabled: !backendHealth.supportedTargets.includes("alphabet"),
+      disabled:
+        backendHealth.checked &&
+        backendHealth.ok &&
+        !backendHealth.supportedTargets.includes("alphabet"),
     },
   ];
 
@@ -576,10 +677,12 @@ function App() {
                 <span>{t.backend}</span>
                 <span
                   className={`rounded-full px-3 py-1 font-semibold ${
-                    backendHealth.ok ? "bg-emerald-500/20 text-emerald-200" : "bg-red-500/20 text-red-200"
+                    backendHealth.ok
+                      ? "bg-emerald-500/20 text-emerald-200"
+                      : "bg-amber-500/20 text-amber-200"
                   }`}
                 >
-                  {backendHealth.ok ? t.online : t.offline}
+                  {backendBadgeLabel}
                 </span>
               </div>
               <div className="rounded-2xl bg-white/10 p-4">
@@ -589,6 +692,11 @@ function App() {
                 <p className="mt-2 text-2xl font-bold">{status}</p>
               </div>
               <p className="text-sm text-slate-300">{showCamera ? t.cameraHint : t.micHint}</p>
+              {!backendHealth.ok ? (
+                <p className="text-xs text-slate-400">
+                  {backendHealth.configured ? t.backendOfflineHint : t.backendConfigHint}
+                </p>
+              ) : null}
             </div>
           </div>
         </header>
