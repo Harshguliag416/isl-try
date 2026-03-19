@@ -12,4 +12,5 @@ datasets/
 backend/data/
 backend/models/hand_landmarker.task
 tmp_module_frames/
+tmp_module_frames2/
 tmp_ocr/
