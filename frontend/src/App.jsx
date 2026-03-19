@@ -5,6 +5,14 @@ const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 const MAX_SEQUENCE_FRAMES = 12;
 const MIN_SEQUENCE_FRAMES = 6;
 const STABLE_PREDICTION_WINDOW = 4;
+const HAND_CONNECTIONS = [
+  [0, 1], [1, 2], [2, 3], [3, 4],
+  [0, 5], [5, 6], [6, 7], [7, 8],
+  [5, 9], [9, 10], [10, 11], [11, 12],
+  [9, 13], [13, 14], [14, 15], [15, 16],
+  [13, 17], [17, 18], [18, 19], [19, 20],
+  [0, 17],
+];
 
 const MODES = {
   signToText: "signToText",
@@ -377,10 +385,29 @@ function App() {
 
     const palette = ["#22D3EE", "#F97316"];
     hands.forEach((hand, handIndex) => {
-      ctx.fillStyle = palette[handIndex % palette.length];
+      const color = palette[handIndex % palette.length];
+      ctx.strokeStyle = color;
+      ctx.fillStyle = color;
+      ctx.lineWidth = 3;
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+
+      HAND_CONNECTIONS.forEach(([startIndex, endIndex]) => {
+        const start = hand.landmarks[startIndex];
+        const end = hand.landmarks[endIndex];
+        if (!start || !end) {
+          return;
+        }
+
+        ctx.beginPath();
+        ctx.moveTo(start.x * canvas.width, start.y * canvas.height);
+        ctx.lineTo(end.x * canvas.width, end.y * canvas.height);
+        ctx.stroke();
+      });
+
       hand.landmarks.forEach((point) => {
         ctx.beginPath();
-        ctx.arc(point.x * canvas.width, point.y * canvas.height, 6, 0, Math.PI * 2);
+        ctx.arc(point.x * canvas.width, point.y * canvas.height, 5, 0, Math.PI * 2);
         ctx.fill();
       });
     });
@@ -653,11 +680,11 @@ function App() {
                     ref={videoRef}
                     muted
                     playsInline
-                    className="aspect-[4/3] w-full rounded-[24px] bg-slate-900 object-cover"
+                    className="aspect-[4/3] w-full scale-x-[-1] rounded-[24px] bg-slate-900 object-contain"
                   />
                   <canvas
                     ref={canvasRef}
-                    className="pointer-events-none absolute inset-0 h-full w-full"
+                    className="pointer-events-none absolute inset-0 h-full w-full scale-x-[-1]"
                   />
                   {!cameraActive ? (
                     <div className="absolute inset-0 flex items-center justify-center bg-slate-950/65 text-center">
