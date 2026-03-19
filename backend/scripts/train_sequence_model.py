@@ -29,6 +29,18 @@ def parse_args():
     parser.add_argument("--validation-split", type=float, default=0.2)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--label-style", choices=["leaf", "path"], default="leaf")
+    parser.add_argument(
+        "--min-samples-per-label",
+        type=int,
+        default=1,
+        help="Keep only labels with at least this many samples in the manifest.",
+    )
+    parser.add_argument(
+        "--include-prefix",
+        action="append",
+        default=[],
+        help="Only keep labels starting with one of these prefixes, e.g. words/ or phrases/.",
+    )
     parser.add_argument("--model-output", type=Path, default=DEFAULT_MODEL_PATH)
     parser.add_argument("--labels-output", type=Path, default=DEFAULT_LABELS_PATH)
     parser.add_argument("--metrics-output", type=Path, default=DEFAULT_METRICS_PATH)
@@ -138,6 +150,29 @@ def build_samples(rows, sequence_length, label_style):
     return samples
 
 
+def filter_rows(rows, min_samples_per_label, include_prefixes):
+    include_prefixes = tuple(include_prefixes or [])
+    filtered_rows = []
+    for row in rows:
+        label = row["label"].strip().replace("\\", "/")
+        if include_prefixes and not label.startswith(include_prefixes):
+            continue
+        filtered_rows.append(row)
+
+    label_counts = defaultdict(int)
+    for row in filtered_rows:
+        label_counts[row["label"].strip().replace("\\", "/")] += 1
+
+    if min_samples_per_label <= 1:
+        return filtered_rows
+
+    return [
+        row
+        for row in filtered_rows
+        if label_counts[row["label"].strip().replace("\\", "/")] >= min_samples_per_label
+    ]
+
+
 def split_samples(samples, validation_split, seed):
     grouped = defaultdict(list)
     for sample in samples:
@@ -211,7 +246,11 @@ def main():
     args = parse_args()
     tf.keras.utils.set_random_seed(args.seed)
 
-    rows = read_manifest(args.manifest)
+    rows = filter_rows(
+        read_manifest(args.manifest),
+        min_samples_per_label=args.min_samples_per_label,
+        include_prefixes=args.include_prefix,
+    )
     samples = build_samples(rows, args.sequence_length, args.label_style)
     if len(samples) < 2:
         raise ValueError("Not enough extracted samples to train. Add more labeled videos first.")
