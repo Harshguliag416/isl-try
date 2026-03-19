@@ -9,10 +9,13 @@ backend/.env
 desktop.ini
 .vscode/
 datasets/
-backend/data/
+backend/data/*
+!backend/data/training_metrics.json
 backend/models/hand_landmarker.task
 backend/models/isl_bridge_lstm*.keras
 backend/models/labels*.json
+!backend/models/isl_bridge_lstm.keras
+!backend/models/labels.json
 tmp_module_frames/
 tmp_module_frames2/
 tmp_ocr/
