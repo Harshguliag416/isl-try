@@ -10,3 +10,6 @@ desktop.ini
 .vscode/
 datasets/
 backend/data/
+backend/models/hand_landmarker.task
+tmp_module_frames/
+tmp_ocr/

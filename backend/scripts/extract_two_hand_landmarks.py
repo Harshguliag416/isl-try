@@ -81,14 +81,15 @@ def normalize_hand_result(result):
     return hands
 
 
-def extract_video_frames(video_path: Path, landmarker, sample_every: int):
+def extract_video_frames(video_path: Path, landmarker, sample_every: int, start_timestamp_ms: int):
     capture = cv2.VideoCapture(str(video_path))
     if not capture.isOpened():
-        return []
+        return [], start_timestamp_ms
 
     frames = []
     frame_index = 0
     fps = capture.get(cv2.CAP_PROP_FPS) or 30.0
+    last_timestamp_ms = start_timestamp_ms
 
     while True:
         ok, frame = capture.read()
@@ -98,16 +99,18 @@ def extract_video_frames(video_path: Path, landmarker, sample_every: int):
         if frame_index % sample_every == 0:
             rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             mp_image = mp_image_from_array(rgb_frame)
-            timestamp_ms = int((frame_index / fps) * 1000)
+            relative_timestamp_ms = int((frame_index / fps) * 1000)
+            timestamp_ms = max(start_timestamp_ms, start_timestamp_ms + relative_timestamp_ms)
             result = landmarker.detect_for_video(mp_image, timestamp_ms)
             hands = normalize_hand_result(result)
             if hands:
                 frames.append({"frame_index": frame_index, "hands": hands})
+            last_timestamp_ms = max(last_timestamp_ms, timestamp_ms)
 
         frame_index += 1
 
     capture.release()
-    return frames
+    return frames, last_timestamp_ms + 1
 
 
 def mp_image_from_array(rgb_frame):
@@ -150,8 +153,11 @@ def main():
     manifest_rows = []
     landmarker = create_landmarker(model_path)
 
+    current_timestamp_ms = 0
     for video_path in videos:
-        frames = extract_video_frames(video_path, landmarker, args.sample_every)
+        frames, current_timestamp_ms = extract_video_frames(
+            video_path, landmarker, args.sample_every, current_timestamp_ms
+        )
         if len(frames) < args.min_frames:
             continue
 
