@@ -235,6 +235,35 @@ MODULE_CONFIGS = {
             },
         ],
     },
+    "Module 3.2 Food items..mp4": {
+        "transcript_name": "module_32_whisper.json",
+        "targets": [
+            {"label": "food", "category": "words", "patterns": ["khana"]},
+            {"label": "thirsty", "category": "words", "patterns": ["pyaasa", "piasi"]},
+            {"label": "water", "category": "words", "patterns": ["pani"]},
+            {"label": "drink", "category": "words", "patterns": ["pina", "piti hai", "pita hum"]},
+            {"label": "dosa", "category": "words", "patterns": ["dosa"]},
+            {"label": "idli", "category": "words", "patterns": ["idli"]},
+            {"label": "dal", "category": "words", "patterns": ["dal"]},
+            {"label": "roti", "category": "words", "patterns": ["roti"]},
+        ],
+    },
+    "Module 7.2 Job and Professions..mp4": {
+        "transcript_name": "module_72_job_and_professions.json",
+        "targets": [
+            {"label": "doctor", "category": "words", "patterns": ["doktor", "doctor"]},
+            {"label": "writer", "category": "words", "patterns": ["lekhaq", "lekhak"]},
+            {"label": "postman", "category": "words", "patterns": ["dhakia"]},
+            {
+                "label": "cleaner",
+                "category": "words",
+                "patterns": ["sapai karam chari", "safai karamchari"],
+            },
+            {"label": "lawyer", "category": "words", "patterns": ["vakil"]},
+            {"label": "driver", "category": "words", "patterns": ["driver"]},
+            {"label": "tailor", "category": "words", "patterns": ["darzi"]},
+        ],
+    },
 }
 
 
@@ -253,6 +282,7 @@ def parse_args():
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
     parser.add_argument("--model", default="base")
     parser.add_argument("--pad-seconds", type=float, default=0.35)
+    parser.add_argument("--max-segment-seconds", type=float, default=8.0)
     parser.add_argument("--force-transcribe", action="store_true")
     return parser.parse_args()
 
@@ -373,7 +403,11 @@ def process_video(video_path: Path, args):
         model_name=args.model,
         force=args.force_transcribe,
     )
-    matches = match_segments(transcript["segments"], config["targets"])
+    matches = [
+        match
+        for match in match_segments(transcript["segments"], config["targets"])
+        if (match["end"] - match["start"]) <= args.max_segment_seconds
+    ]
     written = export_matches(video_path, matches, args.output_dir, args.pad_seconds)
 
     return {
